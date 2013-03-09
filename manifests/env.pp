@@ -11,15 +11,19 @@ define poudriere::env (
   $version  = '9.0-RELEASE',
   $arch     = "amd64",
   $jail     = '90amd64',
-  $pkgs     = []
+  $pkgs     = [],
+  $queue_build = 'never',
 ) {
 
   # Make sure we are prepared to run
   include poudriere
 
+  Exec {
+    path  => ['/sbin','/bin','/usr/local/bin','/usr/bin','/usr/sbin','/usr/local/sbin']
+  }
   # Create the environment
-  exec { "create the jail":
-    command => "/usr/local/bin/poudriere jail -c -j ${jail} -v ${version} -a ${arch}",
+  exec { "create the jail for $name":
+    command => "poudriere jail -c -j ${jail} -v ${version} -a ${arch}",
     require => Exec["create default ports tree"],
     creates => "/usr/local/poudriere/jails/${jail}/",
     timeout => '3600',
@@ -31,12 +35,18 @@ define poudriere::env (
     require => File["/usr/local/etc/poudriere.d"],
   }
 
+  $build_list = "/usr/local/etc/poudriere.${jail}.list"
   if $pkgs != [] {
-    file { "/usr/local/etc/poudriere.${jail}.list":
+    file { $build_list:
       content => inline_template("<%= (pkgs.join('\n'))+\"\n\" %>"),
       require => File["/usr/local/etc/poudriere.d"],
     }
   }
 
-}
 
+  schedule {"schedule rebuild $name $queue_build": period => $queue_build}
+  exec {"queue rebuild $name":
+    command => "poudriere queue bulk -f $build_list -j $jail",
+    schedule => "schedule rebuild $name $queue_build",
+  }
+}

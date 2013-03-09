@@ -8,11 +8,21 @@ class poudriere (
   $freebsd_host   = 'http://ftp6.us.freebsd.org/',
   $ccache_enable  = false,
   $ccache_dir     = '/var/cache/ccache',
-  $poudriere_data = '/usr/local/poudriere_data'
+  $poudriere_data = '/usr/local/poudriere_data', 
+  $port_fetch_method = 'svn',
+  $build_cron_args = {},
+  $update_cron_args = {},
 ){
 
+  $exec_incl = '/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/usr/local/sbin'
+
   Exec {
-    path => '/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin',
+    path => $exec_incl
+  }
+
+  if $port_fetch_method == 'portsnap' {
+    fail ( "fetching from portsnap is currently not
+    enabled because it cannot be run non interactively")
   }
 
   # Install poudriere
@@ -27,10 +37,10 @@ class poudriere (
   }
 
   exec { "create default ports tree":
-    command => "/usr/local/bin/poudriere ports -c",
+    command => "poudriere ports -c -m $port_fetch_method",
     require => File["/usr/local/etc/poudriere.conf"],
-    creates => '/usr/local/poudriere/ports/default',
-    timeout => '1800',
+    creates => '/usr/local/poudriere/ports/default/ftp',
+    timeout => '3000',
   }
 
   file { "/usr/local/etc/poudriere.d":
@@ -43,5 +53,26 @@ class poudriere (
       ensure => directory,
     }
   }
+  
+  if is_hash($build_cron_args){
+    if $build_cron_args != {}{
+      ensure_resource('cron','poudriere_build_run', merge(
+        {command => "poudriere cron",environment => "PATH=$exec_incl"},
+        $build_cron_args))
+    }
+  } else {
+     fail ("build_cron_args only takes a hash as an argument")
+  }
 
+  if is_hash($update_cron_args){
+    if $update_cron_args != {}{
+      ensure_resource('cron','poudriere_update_run', merge(
+        {command => "poudriere ports -u", environment => "PATH=$exec_incl"},
+        $update_cron_args))
+    }
+  } else {
+     fail ("update_cron_args only takes a hash as an argument")
+  }
+
+  
 }
